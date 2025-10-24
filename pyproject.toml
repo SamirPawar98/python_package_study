@@ -36,21 +36,3 @@ packages = ["genericpkg"]
 [tool.setuptools.dynamic]
 version = {attr = "genericpkg.__version__.__version__"}
 
-[tool.bumpver]
-current_version = "0.1.3"
-version_pattern = "MAJOR.MINOR.PATCH"
-commit_message = "Bump version {old_version} -> {new_version}"
-commit = true
-tag = true
-push = true
-
-[tool.bumpver.file_patterns]
-"genericpkg/__version__.py" = [
-    '__version__ = "{version}"'
-]
-"setup.cfg" = [
-    'version = {version}'
-]
-"pyproject.toml" = [
-    'current_version = "{version}"'
-]
