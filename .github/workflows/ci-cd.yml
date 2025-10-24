@@ -1,0 +1,193 @@
+name: CI - Test, Build, and Version Bump
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        set -x
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+        pip install -r requirements-dev.txt
+
+    - name: Format check with black
+      run: |
+        set -x
+        black --check --verbose genericpkg tests
+
+    - name: Lint with flake8
+      run: |
+        set -x
+        flake8 genericpkg tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 genericpkg tests --count --max-complexity=10 --max-line-length=88 --statistics
+
+    - name: Type check with mypy
+      run: |
+        set -x
+        mypy genericpkg --verbose
+
+    - name: Test with pytest
+      run: |
+        set -x
+        pytest tests/
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install build dependencies
+      run: |
+        set -x
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: python -m build
+
+    - name: Check package
+      run: twine check dist/*
+
+  version-bump:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.commits[0].message, 'Bump version:')
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: version-bump-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.RELEASE_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install bump2version
+      run: |
+        set -x
+        pip install bump2version
+
+    - name: Configure git
+      run: |
+        set -x
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Pull and sync with main
+      run: |
+        set -x
+        git fetch origin
+        git checkout main
+        git pull --rebase origin main
+
+    - name: Bump version
+      id: bump
+      run: |
+        set -x
+        CURRENT_VERSION=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")
+        if git log --format=%B -n 1 ${{ github.sha }} | grep -q "BREAKING CHANGE\|major:"; then
+          BUMP_TYPE="major"
+        elif git log --format=%B -n 1 ${{ github.sha }} | grep -q "feat:\|feature:"; then
+          BUMP_TYPE="minor"
+        else
+          BUMP_TYPE="patch"
+        fi
+        echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+        bump2version $BUMP_TYPE --verbose || { echo "Bump failed"; exit 1; }
+        echo "new_version=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")" >> $GITHUB_OUTPUT
+
+    - name: Push changes
+      run: |
+        set -x
+        git push origin main --force-with-lease
+        git push origin --tags --force-with-lease
+
+    - name: Install build dependencies
+      run: |
+        set -x
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package with new version
+      run: |
+        set -x
+        python -m build
+
+    - name: Check package
+      run: |
+        set -x
+        twine check dist/*
+
+    - name: Create Release and Upload Assets
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      with:
+        tag_name: v${{ steps.bump.outputs.new_version }}
+        name: Release v${{ steps.bump.outputs.new_version }}
+        body: |
+          Changes in this Release
+          - Automated release for version ${{ steps.bump.outputs.new_version }}
+          - Bump type: ${{ steps.bump.outputs.bump_type }}
+        draft: false
+        prerelease: false
+        files: dist/*
+
+    - name: Debug Release Creation
+      run: |
+        set -x
+        echo "Release URL: ${{ steps.create_release.outputs.html_url }}"
+        echo "Upload URL: ${{ steps.create_release.outputs.upload_url }}"
+        echo "Release ID: ${{ steps.create_release.outputs.id }}"
+        echo "Tag Name: v${{ steps.bump.outputs.new_version }}"
+        echo "All Outputs: ${{ toJSON(steps.create_release.outputs) }}"

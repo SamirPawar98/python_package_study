@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        set -x
+        python -m pip install --upgrade pip
+        pip install bump2version build twine
+        pip install -e .[dev]
+        pip install -r requirements-dev.txt
+
+    - name: Configure git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Run tests
+      run: |
+        set -x
+        pytest tests/
+
+    - name: Bump version
+      id: bump
+      run: |
+        set -x
+        CURRENT_VERSION=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")
+        echo "Current version: $CURRENT_VERSION"
+        
+        bump2version ${{ github.event.inputs.version_bump }} --verbose
+        
+        NEW_VERSION=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")
+        echo "New version: $NEW_VERSION"
+        echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Build package
+      run: python -m build
+
+    - name: Check package
+      run: twine check dist/*
+
+    - name: Zip dist folder
+      run: zip -r dist.zip dist/
+
+    - name: Push changes
+      run: |
+        git push origin main
+        git push origin --tags
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.bump.outputs.new_version }}
+        release_name: Release v${{ steps.bump.outputs.new_version }}
+        body: |
+          Release v${{ steps.bump.outputs.new_version }}
+          
+          This is a ${{ github.event.inputs.version_bump }} release.
+          
+          ## Changes
+          - Manual release triggered
+          - Version bumped from previous to ${{ steps.bump.outputs.new_version }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist.zip
+        asset_name: genericpkg-${{ steps.bump.outputs.new_version }}-dist.zip
+        asset_content_type: application/zip
+
+    - name: Publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: twine upload dist/*
