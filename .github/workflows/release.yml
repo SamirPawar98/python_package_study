@@ -13,12 +13,16 @@ on:
         - minor
         - major
 
+env:
+  PYTHON_VERSION: "3.10"
+
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+      actions: write
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -28,7 +32,15 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
     - name: Install dependencies
       run: |
@@ -38,15 +50,37 @@ jobs:
         pip install -e .[dev]
         pip install -r requirements-dev.txt
 
-    - name: Configure git
+    - name: Format with black
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        set -x
+        black genericpkg tests
 
-    - name: Run tests
+    - name: Format check with black
+      run: |
+        set -x
+        black --check --verbose genericpkg tests
+
+    - name: Lint with flake8
+      run: |
+        set -x
+        flake8 genericpkg tests --count --select=E9,F63,F7,F82 --show-source --statistics --exit-zero
+        flake8 genericpkg tests --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+    - name: Type check with mypy
+      run: |
+        set -x
+        mypy genericpkg --verbose
+
+    - name: Test with pytest
       run: |
         set -x
         pytest tests/
+
+    - name: Configure git
+      run: |
+        set -x
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
 
     - name: Bump version
       id: bump
@@ -54,58 +88,56 @@ jobs:
         set -x
         CURRENT_VERSION=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")
         echo "Current version: $CURRENT_VERSION"
-        
-        bump2version ${{ github.event.inputs.version_bump }} --verbose
-        
-        NEW_VERSION=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")
-        echo "New version: $NEW_VERSION"
-        echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+        bump2version ${{ github.event.inputs.version_bump }} --verbose || { echo "Bump failed"; exit 1; }
+        echo "new_version=$(python -c "from genericpkg.__version__ import __version__; print(__version__)")" >> "$GITHUB_OUTPUT"
+        echo "bump_type=${{ github.event.inputs.version_bump }}" >> "$GITHUB_OUTPUT"
 
     - name: Build package
-      run: python -m build
+      run: |
+        set -x
+        python -m build
 
     - name: Check package
-      run: twine check dist/*
-
-    - name: Zip dist folder
-      run: zip -r dist.zip dist/
+      run: |
+        set -x
+        twine check dist/*
 
     - name: Push changes
       run: |
-        git push origin main
-        git push origin --tags
+        set -x
+        git push origin main --force-with-lease
+        git push origin --tags --force-with-lease
 
-    - name: Create Release
+    - name: Create Release and Upload Assets
       id: create_release
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: v${{ steps.bump.outputs.new_version }}
-        release_name: Release v${{ steps.bump.outputs.new_version }}
+        name: Release v${{ steps.bump.outputs.new_version }}
         body: |
-          Release v${{ steps.bump.outputs.new_version }}
-          
-          This is a ${{ github.event.inputs.version_bump }} release.
-          
-          ## Changes
+          Changes in this Release
           - Manual release triggered
-          - Version bumped from previous to ${{ steps.bump.outputs.new_version }}
+          - Bump type: ${{ steps.bump.outputs.bump_type }}
+          - Version bumped from ${{ steps.bump.outputs.current_version }} to ${{ steps.bump.outputs.new_version }}
         draft: false
         prerelease: false
+        files: dist/*
 
-    - name: Upload Release Assets
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist.zip
-        asset_name: genericpkg-${{ steps.bump.outputs.new_version }}-dist.zip
-        asset_content_type: application/zip
+    - name: Debug Release Creation
+      run: |
+        set -x
+        echo "Release URL: ${{ steps.create_release.outputs.html_url }}"
+        echo "Upload URL: ${{ steps.create_release.outputs.upload_url }}"
+        echo "Release ID: ${{ steps.create_release.outputs.id }}"
+        echo "Tag Name: v${{ steps.bump.outputs.new_version }}"
+        echo "All Outputs: ${{ toJSON(steps.create_release.outputs) }}"
 
     - name: Publish to PyPI
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: twine upload dist/*
+      run: |
+        set -x
+        twine upload dist/*
