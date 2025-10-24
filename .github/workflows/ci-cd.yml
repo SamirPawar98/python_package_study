@@ -41,10 +41,16 @@ jobs:
         pip install -e .[dev]
         pip install -r requirements-dev.txt
 
+    - name: Format with black
+      run: |
+        set -x
+        black genericpkg tests
+
     - name: Format check with black
       run: |
         set -x
         black --check --verbose genericpkg tests
+
 
     - name: Lint with flake8
       run: |
