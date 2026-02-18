@@ -62,3 +62,5 @@ jobs:
             --repository-url https://pip.pkg.github.com/${GITHUB_REPOSITORY}/ \
             dist/*
 
+          done
+
