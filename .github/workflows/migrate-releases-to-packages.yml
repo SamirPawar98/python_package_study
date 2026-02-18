@@ -32,7 +32,7 @@ jobs:
       - name: Build and upload each tag
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           for tag in ${{ steps.tags.outputs.TAGS }}
           do
