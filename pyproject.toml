@@ -37,4 +37,4 @@ packages = ["genericpkg"]
 version = {attr = "genericpkg.__version__.__version__"}
 
 [project.urls]
-Repository = "https://github.com/SamirPawar98/genericpkg"
+Repository = "https://github.com/SamirPawar98/python_package_study"
