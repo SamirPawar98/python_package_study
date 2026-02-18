@@ -12,33 +12,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install tools
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests twine
 
-      - name: Download all release wheels
+      - name: Download release wheels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir -p dist
-          python - <<EOF
-import requests, os
-
-repo = os.environ["REPO"]
-headers = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}"}
-
-releases = requests.get(f"https://api.github.com/repos/{repo}/releases", headers=headers).json()
-
-for rel in releases:
-    for asset in rel.get("assets", []):
-        if asset["name"].endswith(".whl"):
-            url = asset["browser_download_url"]
-            print("Downloading", url)
-            r = requests.get(url, headers=headers)
-            open("dist/" + asset["name"], "wb").write(r.content)
-EOF
+          python .github/scripts/migrate_releases.py
 
       - name: Upload to GitHub Packages
         env:
