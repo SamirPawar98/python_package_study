@@ -39,5 +39,5 @@ jobs:
         run: |
           set -x
           twine upload \
-            --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
-            dist/*
+          --repository-url https://pip.pkg.github.com/${{ github.repository }}/ \
+          dist/*
