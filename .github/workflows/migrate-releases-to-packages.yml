@@ -22,8 +22,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir dist
-          python << 'PY'
+          mkdir -p dist
+          python - <<EOF
 import requests, os
 
 repo = os.environ["REPO"]
@@ -38,12 +38,13 @@ for rel in releases:
             print("Downloading", url)
             r = requests.get(url, headers=headers)
             open("dist/" + asset["name"], "wb").write(r.content)
-PY
+EOF
 
       - name: Upload to GitHub Packages
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           twine upload \
             --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
-            -u __token__ \
-            -p ${{ secrets.GITHUB_TOKEN }} \
             dist/*
