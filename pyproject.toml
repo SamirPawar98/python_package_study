@@ -36,3 +36,5 @@ packages = ["genericpkg"]
 [tool.setuptools.dynamic]
 version = {attr = "genericpkg.__version__.__version__"}
 
+[project.urls]
+Repository = "https://github.com/SamirPawar98/genericpkg"
