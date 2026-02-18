@@ -34,13 +34,26 @@ jobs:
 
           for tag in $(git tag)
           do
+            echo "=============================="
             echo "Processing $tag"
+            echo "=============================="
+
             git checkout $tag
+
+            echo "Before patch:"
+            grep -n "Repository" pyproject.toml || true
+
+            # Patch repository so GitHub Packages accepts upload
+            sed -i 's|SamirPawar98/genericpkg|SamirPawar98/python_package_study|g' pyproject.toml
+
+            echo "After patch:"
+            grep -n "Repository" pyproject.toml || true
 
             rm -rf dist build *.egg-info
             python -m build
 
-            ls -l dist
+            echo "Metadata inside wheel:"
+            unzip -p dist/*.whl *.dist-info/METADATA | grep -i repository || true
 
             twine upload \
               --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
