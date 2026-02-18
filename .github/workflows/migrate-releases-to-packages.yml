@@ -40,22 +40,26 @@ jobs:
 
             git checkout $tag
 
-            echo "Before patch:"
-            grep -n "Repository" pyproject.toml || true
+            # Inject repository metadata required by GitHub Packages
+            if ! grep -q "\[project.urls\]" pyproject.toml 2>/dev/null; then
+              echo "" >> pyproject.toml
+              echo "[project.urls]" >> pyproject.toml
+              echo "Repository = \"https://github.com/${GITHUB_REPOSITORY}\"" >> pyproject.toml
+            else
+              sed -i '/\[project.urls\]/,/^\[/ s|Repository *=.*|Repository = "https://github.com/'"${GITHUB_REPOSITORY}"'"|' pyproject.toml || true
+            fi
 
-            # Patch repository so GitHub Packages accepts upload
-            sed -i 's|SamirPawar98/genericpkg|SamirPawar98/python_package_study|g' pyproject.toml
-
-            echo "After patch:"
-            grep -n "Repository" pyproject.toml || true
+            echo "Injected metadata:"
+            grep -i repository -n pyproject.toml || true
 
             rm -rf dist build *.egg-info
             python -m build
 
-            echo "Metadata inside wheel:"
+            echo "Wheel metadata:"
             unzip -p dist/*.whl *.dist-info/METADATA | grep -i repository || true
 
             twine upload \
               --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
               dist/*
           done
+
