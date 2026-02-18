@@ -1,0 +1,49 @@
+name: Migrate Releases to GitHub Packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests twine
+
+      - name: Download all release wheels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir dist
+          python << 'PY'
+import requests, os
+
+repo = os.environ["REPO"]
+headers = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}"}
+
+releases = requests.get(f"https://api.github.com/repos/{repo}/releases", headers=headers).json()
+
+for rel in releases:
+    for asset in rel.get("assets", []):
+        if asset["name"].endswith(".whl"):
+            url = asset["browser_download_url"]
+            print("Downloading", url)
+            r = requests.get(url, headers=headers)
+            open("dist/" + asset["name"], "wb").write(r.content)
+PY
+
+      - name: Upload to GitHub Packages
+        run: |
+          twine upload \
+            --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
+            -u __token__ \
+            -p ${{ secrets.GITHUB_TOKEN }} \
+            dist/*
