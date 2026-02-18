@@ -27,7 +27,7 @@ jobs:
       - name: Build and upload each tag
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.GH_PACKAGES_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN  }}
         run: |
           set -e
           git fetch --tags
