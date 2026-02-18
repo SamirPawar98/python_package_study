@@ -24,23 +24,12 @@ jobs:
         run: |
           pip install build twine
 
-      - name: Get tags
-        id: tags
-        run: |
-          echo "TAGS=$(git tag | tr '\n' ' ')" >> $GITHUB_OUTPUT
-
-      - name: Build and upload each tag
+      - name: Upload to GitHub Packages
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
-          for tag in ${{ steps.tags.outputs.TAGS }}
-          do
-            echo "Processing $tag"
-            git checkout $tag
+          twine upload \
+            --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ \
+            dist/*
 
-            rm -rf dist build *.egg-info
-            python -m build
-
-            twine upload --repository-url https://pip.pkg.github.com/${{ github.repository_owner }}/ dist/* || true
-          done
